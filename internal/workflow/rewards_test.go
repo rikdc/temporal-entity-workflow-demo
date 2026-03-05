@@ -177,13 +177,12 @@ func TestPointEventDeduplication(t *testing.T) {
 // TestRewardsStateInitialization verifies initial state setup
 func TestRewardsStateInitialization(t *testing.T) {
 	state := RewardsState{
-		CustomerID:      "customer-123",
-		Points:          0,
-		Tier:            TierBasic,
-		EventCount:      0,
-		Enrolled:        false,
-		ProcessedKeys:   make(map[string]bool),
-		WorkflowVersion: WorkflowVersion_Baseline,
+		CustomerID:    "customer-123",
+		Points:        0,
+		Tier:          TierBasic,
+		EventCount:    0,
+		Enrolled:      false,
+		ProcessedKeys: make(map[string]bool),
 	}
 
 	if state.CustomerID != "customer-123" {
@@ -203,8 +202,5 @@ func TestRewardsStateInitialization(t *testing.T) {
 	}
 	if state.ProcessedKeys == nil {
 		t.Error("ProcessedKeys map is nil, want initialized map")
-	}
-	if state.WorkflowVersion != WorkflowVersion_Baseline {
-		t.Errorf("WorkflowVersion = %d, want %d", state.WorkflowVersion, WorkflowVersion_Baseline)
 	}
 }
