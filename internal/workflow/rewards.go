@@ -23,6 +23,13 @@ const (
 	InactivityTimeout = 365 * 24 * time.Hour
 )
 
+// Workflow version constants
+const (
+	WorkflowVersion_Baseline = 1
+
+	ChangeID_Baseline = "baseline"
+)
+
 // Search attribute keys for queryability in Temporal UI
 var (
 	tierKey   = temporal.NewSearchAttributeKeyKeyword("CustomStringField")
@@ -60,6 +67,7 @@ type RewardsState struct {
 	Done             bool
 	Enrolled         bool              // Track if enrollment activity has been called
 	ProcessedKeys    map[string]bool   // Track processed deduplication keys for idempotency
+	WorkflowVersion  int               `json:"workflow_version,omitempty"` // Track which version created this state
 }
 
 // RewardsWorkflow is the long-running entity workflow for a customer's rewards membership.
@@ -80,10 +88,19 @@ func RewardsWorkflow(ctx workflow.Context, state RewardsState) error {
 	logger.Info("RewardsWorkflow started",
 		"customerID", state.CustomerID,
 		"eventCount", state.EventCount,
+		"workflowVersion", state.WorkflowVersion,
 		"workflowID", info.WorkflowExecution.ID,
 		"runID", info.WorkflowExecution.RunID,
 		"attempt", info.Attempt,
 	)
+
+	// Baseline version marker for safe workflow evolution
+	_ = workflow.GetVersion(ctx, ChangeID_Baseline, workflow.DefaultVersion, WorkflowVersion_Baseline)
+
+	// Initialize workflow version if not set
+	if state.WorkflowVersion == 0 {
+		state.WorkflowVersion = WorkflowVersion_Baseline
+	}
 
 	// Initialize ProcessedKeys map if nil (for backwards compatibility with continue-as-new)
 	if state.ProcessedKeys == nil {
@@ -286,7 +303,10 @@ func RewardsWorkflow(ctx workflow.Context, state RewardsState) error {
 				"customerID", state.CustomerID,
 				"workflowID", info.WorkflowExecution.ID,
 				"eventCount", state.EventCount,
+				"workflowVersion", state.WorkflowVersion,
 			)
+			// Upgrade to current version on continue-as-new
+			state.WorkflowVersion = WorkflowVersion_Baseline
 			return workflow.NewContinueAsNewError(ctx, RewardsWorkflow, state)
 		}
 	}
