@@ -56,6 +56,9 @@ Temporary Items
 *.swo
 *~
 
+# Claude Code
+.claude/
+
 # Temporal
 /logs/
 .temporal/
