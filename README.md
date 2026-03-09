@@ -25,7 +25,6 @@ temporal-challenge/
 ├── go.sum
 ├── README.md
 ├── ARCHITECTURE.md              # Detailed architecture documentation
-├── TRADEOFFS.md                 # Implementation tradeoffs and decisions
 └── diagram.svg
 ```
 
@@ -212,8 +211,6 @@ PASS
 ok      github.com/rikdc/temporal-entity-workflow-demo/internal/workflow
 ```
 
-See [TRADEOFFS.md](TRADEOFFS.md) for discussion on integration testing approach.
-
 ## Features
 
 This implementation covers the core requirements plus production patterns:
@@ -234,8 +231,6 @@ This implementation covers the core requirements plus production patterns:
 14. ✅ **Unit Tests** - Comprehensive test coverage for tier calculation logic
 
 ## Production Gaps
-
-See [TRADEOFFS.md](TRADEOFFS.md) for detailed rationale.
 
 **Stubbed for POC**:
 
