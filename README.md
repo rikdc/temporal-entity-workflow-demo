@@ -14,18 +14,14 @@ A customer loyalty rewards system built with [Temporal](https://temporal.io) usi
 ## Quick Start
 
 ```bash
-# Build
-go build -o rewards ./cmd/rewards
-
-# Terminal 1: Start Temporal and configure search attributes
+# Terminal 1: Start Temporal
 temporal server start-dev
 
-# In another terminal, configure search attributes (one-time setup)
-temporal operator search-attribute create --name CustomStringField --type Keyword
-temporal operator search-attribute create --name CustomIntField --type Int
+# Terminal 2: One-time setup - configure search attributes
+make setup-temporal
 
-# Terminal 2: Start worker (required before enrolling customers)
-./rewards worker
+# Start worker (required before enrolling customers)
+make worker
 
 # Terminal 3: Try it out
 ./rewards enroll customer-42
@@ -55,6 +51,13 @@ temporal operator search-attribute create --name CustomIntField --type Int
 ## Commands
 
 ```bash
+# Makefile commands
+make build                    # Build the binary
+make test                     # Run tests
+make setup-temporal           # Configure search attributes (one-time)
+make worker                   # Start worker
+
+# CLI commands
 rewards worker                                    # Start worker
 rewards enroll <customerID>                       # Enroll customer
 rewards add-points <customerID> <activity> <pts>  # Add points

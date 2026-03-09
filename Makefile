@@ -1,4 +1,4 @@
-.PHONY: build clean test lint worker enroll status
+.PHONY: build clean test lint worker enroll status setup-temporal
 
 # Build the rewards binary
 build:
@@ -15,6 +15,15 @@ test:
 # Run linter
 lint:
 	golangci-lint run
+
+# Setup Temporal search attributes (run once after starting Temporal server)
+setup-temporal:
+	@echo "Configuring Temporal search attributes..."
+	@temporal operator search-attribute list | grep -q CustomStringField || \
+		temporal operator search-attribute create --name CustomStringField --type Keyword
+	@temporal operator search-attribute list | grep -q CustomIntField || \
+		temporal operator search-attribute create --name CustomIntField --type Int
+	@echo "✓ Search attributes configured"
 
 # Start the worker (requires Temporal server running)
 worker: build
