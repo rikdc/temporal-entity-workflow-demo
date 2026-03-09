@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 	"os"
 	"strconv"
 
@@ -148,27 +149,6 @@ func addPoints(c client.Client) {
 	}
 }
 
-func getStatus(c client.Client) {
-	if len(os.Args) < 3 {
-		log.Fatal("Usage: rewards status <customerID>")
-	}
-
-	customerID := os.Args[2]
-	ctx := context.Background()
-
-	resp, err := c.QueryWorkflow(ctx, workflowID(customerID), "", workflow.QueryGetStatus)
-	if err != nil {
-		log.Fatalf("failed to query workflow: %v", err)
-	}
-
-	var status workflow.CustomerStatus
-	if err := resp.Get(&status); err != nil {
-		log.Fatalf("failed to decode query result: %v", err)
-	}
-
-	out, _ := json.MarshalIndent(status, "", "  ")
-	fmt.Println(string(out))
-}
 
 func unenrollCustomer(c client.Client) {
 	if len(os.Args) < 3 {
@@ -184,4 +164,29 @@ func unenrollCustomer(c client.Client) {
 	}
 
 	fmt.Printf("✓ Unenroll signal sent for customer %s\n", customerID)
+}
+func getStatus(c client.Client) {
+	if len(os.Args) < 3 {
+		log.Fatal("Usage: rewards status <customerID>")
+	}
+
+	customerID := os.Args[2]
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := c.QueryWorkflow(ctx, workflowID(customerID), "", workflow.QueryGetStatus)
+	if err != nil {
+		if err.Error() == "context deadline exceeded" || ctx.Err() == context.DeadlineExceeded {
+			log.Fatalf("query timeout - is the worker running? Start it with: ./rewards worker")
+		}
+		log.Fatalf("failed to query workflow: %v", err)
+	}
+
+	var status workflow.CustomerStatus
+	if err := resp.Get(&status); err != nil {
+		log.Fatalf("failed to decode query result: %v", err)
+	}
+
+	out, _ := json.MarshalIndent(status, "", "  ")
+	fmt.Println(string(out))
 }

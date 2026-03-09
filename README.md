@@ -17,10 +17,14 @@ A customer loyalty rewards system built with [Temporal](https://temporal.io) usi
 # Build
 go build -o rewards ./cmd/rewards
 
-# Terminal 1: Start Temporal
+# Terminal 1: Start Temporal and configure search attributes
 temporal server start-dev
 
-# Terminal 2: Start worker
+# In another terminal, configure search attributes (one-time setup)
+temporal operator search-attribute create --name CustomStringField --type Keyword
+temporal operator search-attribute create --name CustomIntField --type Int
+
+# Terminal 2: Start worker (required before enrolling customers)
 ./rewards worker
 
 # Terminal 3: Try it out
@@ -46,6 +50,8 @@ temporal server start-dev
 
 **Versioning**: Workflow uses `GetVersion` for safe code changes to running workflows.
 
+**Search Attributes**: Workflows update `CustomStringField` (tier) and `CustomIntField` (points) for querying across workflows.
+
 ## Commands
 
 ```bash
@@ -66,7 +72,7 @@ Tests cover tier calculation logic, edge cases, and deduplication. See [ARCHITEC
 
 ## What's Stubbed
 
-This is a POC. Activities log to console instead of hitting real databases or notification services. Search attributes use default custom fields instead of properly configured ones.
+This is a POC. Activities log to console instead of hitting real databases or notification services.
 
 ---
 
