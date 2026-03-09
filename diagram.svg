@@ -1,6 +1,6 @@
-<svg viewBox="0 0 900 640" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Segoe UI, sans-serif">
+<svg viewBox="0 0 900 700" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Segoe UI, sans-serif">
   <!-- Background -->
-  <rect width="900" height="640" fill="#0f1117"/>
+  <rect width="900" height="700" fill="#0f1117"/>
 
   <!-- Title -->
   <text x="450" y="40" text-anchor="middle" fill="#ffffff" font-size="20" font-weight="700">Temporal Rewards Program — Entity Workflow Architecture</text>
@@ -109,26 +109,42 @@
   <text x="651" y="279" fill="#48bb78" font-size="10">(on unenroll signal)</text>
 
   <!-- ── LEGEND ── -->
-  <rect x="30" y="490" width="840" height="130" rx="8" fill="#13172a" stroke="#2d3748" stroke-width="1"/>
-  <text x="50" y="512" fill="#a0aec0" font-size="11" font-weight="700">KEY DESIGN DECISIONS</text>
+  <rect x="30" y="520" width="840" height="160" rx="8" fill="#13172a" stroke="#2d3748" stroke-width="1"/>
+  <text x="50" y="542" fill="#a0aec0" font-size="11" font-weight="700">KEY DESIGN DECISIONS</text>
 
-  <circle cx="60" cy="535" r="4" fill="#4f6ef7"/>
-  <text x="72" y="539" fill="#e2e8f0" font-size="11"><tspan font-weight="600">Entity Workflow pattern</tspan> — one perpetually-running workflow per customer, addressed by a stable WorkflowID. No polling or cron needed.</text>
+  <circle cx="60" cy="565" r="4" fill="#4f6ef7"/>
+  <text x="72" y="569" fill="#e2e8f0" font-size="11">
+    <tspan font-weight="600">Entity Workflow pattern</tspan> — one perpetually-running workflow per customer,
+    <tspan x="72" dy="14">addressed by stable WorkflowID. No polling or cron infra needed. Cancel-safe.</tspan>
+  </text>
 
-  <circle cx="60" cy="557" r="4" fill="#48bb78"/>
-  <text x="72" y="561" fill="#e2e8f0" font-size="11"><tspan font-weight="600">Signals</tspan> — fully durable async event delivery. Points are never lost even if the worker crashes mid-signal.</text>
+  <circle cx="60" cy="595" r="4" fill="#48bb78"/>
+  <text x="72" y="599" fill="#e2e8f0" font-size="11">
+    <tspan font-weight="600">Signals</tspan> — fully durable async event delivery. Points are never lost even if the
+    <tspan x="72" dy="14">worker crashes mid-signal. Workflow calls Enroll (on start), NotifyTierChange (on tier change), RecordUnenrollment (on exit).</tspan>
+  </text>
 
-  <circle cx="60" cy="579" r="4" fill="#63b3ed"/>
-  <text x="72" y="583" fill="#e2e8f0" font-size="11"><tspan font-weight="600">Queries</tspan> — synchronous, consistent reads of workflow state without side effects. No separate read model required.</text>
+  <circle cx="60" cy="625" r="4" fill="#63b3ed"/>
+  <text x="72" y="629" fill="#e2e8f0" font-size="11">
+    <tspan font-weight="600">Queries</tspan> — synchronous, consistent reads of workflow state without side effects. No separate read model required.
+  </text>
 
-  <circle cx="60" cy="601" r="4" fill="#f6ad55"/>
-  <text x="72" y="605" fill="#e2e8f0" font-size="11"><tspan font-weight="600">Continue-as-new</tspan> — resets event history every 200 events, keeping the workflow runnable indefinitely without unbounded memory.</text>
+  <circle cx="60" cy="655" r="4" fill="#f6ad55"/>
+  <text x="72" y="659" fill="#e2e8f0" font-size="11">
+    <tspan font-weight="600">Continue-as-new</tspan> — resets event history every 200 events, keeping the workflow runnable indefinitely without unbounded memory.
+  </text>
 
-  <circle cx="450" cy="535" r="4" fill="#fc8181"/>
-  <text x="462" y="539" fill="#e2e8f0" font-size="11"><tspan font-weight="600">Inactivity timer</tspan> — a 365-day Temporal sleep. Free, durable, no cron infra needed. Cancelled and re-armed on every point event.</text>
+  <circle cx="450" cy="565" r="4" fill="#fc8181"/>
+  <text x="462" y="569" fill="#e2e8f0" font-size="11">
+    <tspan font-weight="600">Inactivity timer</tspan> — a 365-day Temporal sleep. Free, durable, no cron infra
+    <tspan x="462" dy="14">needed. Cancelled and re-armed on every point event.</tspan>
+  </text>
 
-  <circle cx="450" cy="557" r="4" fill="#b794f4"/>
-  <text x="462" y="561" fill="#e2e8f0" font-size="11"><tspan font-weight="600">Activity execution</tspan> — workflow calls Enroll (on start), NotifyTierChange (on tier change), RecordUnenrollment (on exit) with automatic retries.</text>
+  <circle cx="450" cy="595" r="4" fill="#b794f4"/>
+  <text x="462" y="599" fill="#e2e8f0" font-size="11">
+    <tspan font-weight="600">Activity execution</tspan> — workflow calls Enroll (on start), NotifyTierChange
+    <tspan x="462" dy="14">(on tier change), RecordUnenrollment (on exit) with automatic retries.</tspan>
+  </text>
 
   <!-- Arrow markers -->
   <defs>
