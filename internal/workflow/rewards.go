@@ -68,6 +68,7 @@ type RewardsState struct {
 	Enrolled        bool            // Track if enrollment activity has been called
 	ProcessedKeys   map[string]bool // Track processed deduplication keys for idempotency
 	WorkflowVersion int             `json:"workflow_version,omitempty"` // Track which version created this state
+	LastActivityAt  time.Time       `json:"last_activity_at,omitempty"`
 }
 
 // RewardsWorkflow is the long-running entity workflow for a customer's rewards membership.
@@ -163,7 +164,7 @@ func RewardsWorkflow(ctx workflow.Context, state RewardsState) error {
 	// --- Inactivity timer ---
 	// If no points are earned within InactivityTimeout, points reset to 0.
 	timerCtx, cancelTimer := workflow.WithCancel(ctx)
-	inactivityTimer := workflow.NewTimer(timerCtx, InactivityTimeout)
+	inactivityTimer := createInactivityTimer(ctx, timerCtx, state)
 
 	for {
 		selector := workflow.NewSelector(ctx)
@@ -175,9 +176,11 @@ func RewardsWorkflow(ctx workflow.Context, state RewardsState) error {
 
 			applyPointEvent(ctx, &state, event, info.WorkflowExecution.ID)
 
+			state.LastActivityAt = workflow.Now(ctx)
+
 			// Re-arm the inactivity timer
 			timerCtx, cancelTimer = workflow.WithCancel(ctx)
-			inactivityTimer = workflow.NewTimer(timerCtx, InactivityTimeout)
+			inactivityTimer = createInactivityTimer(ctx, timerCtx, state)
 		})
 
 		// Handle unenroll signal
@@ -230,8 +233,9 @@ func RewardsWorkflow(ctx workflow.Context, state RewardsState) error {
 				}
 
 				// Re-arm timer
+				state.LastActivityAt = workflow.Now(ctx)
 				timerCtx, cancelTimer = workflow.WithCancel(ctx)
-				inactivityTimer = workflow.NewTimer(timerCtx, InactivityTimeout)
+				inactivityTimer = createInactivityTimer(ctx, timerCtx, state)
 			}
 		})
 
@@ -282,6 +286,21 @@ func computeTier(points int) string {
 	}
 }
 
+// createInactivityTimer returns a timer for the remaining inactivity duration.
+// If LastActivityAt is zero (first run), the full InactivityTimeout is used.
+// If the timeout has already elapsed (e.g. after a long ContinueAsNew gap), the timer fires immediately
+func createInactivityTimer(ctx workflow.Context, timerCtx workflow.Context, state RewardsState) workflow.Future {
+	if state.LastActivityAt.IsZero() {
+		return workflow.NewTimer(timerCtx, InactivityTimeout)
+	}
+
+	elapsed := workflow.Now(ctx).Sub(state.LastActivityAt)
+	remaining := max(InactivityTimeout-elapsed, 0)
+
+	return workflow.NewTimer(timerCtx, remaining)
+}
+
+// applyPointEvent handles the signal indicating a point is applied.
 func applyPointEvent(
 	ctx workflow.Context,
 	state *RewardsState,
