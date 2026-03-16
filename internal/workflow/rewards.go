@@ -60,14 +60,14 @@ type CustomerStatus struct {
 
 // RewardsState holds all mutable workflow state
 type RewardsState struct {
-	CustomerID       string
-	Points           int
-	Tier             string
-	EventCount       int
-	Done             bool
-	Enrolled         bool              // Track if enrollment activity has been called
-	ProcessedKeys    map[string]bool   // Track processed deduplication keys for idempotency
-	WorkflowVersion  int               `json:"workflow_version,omitempty"` // Track which version created this state
+	CustomerID      string
+	Points          int
+	Tier            string
+	EventCount      int
+	Done            bool
+	Enrolled        bool            // Track if enrollment activity has been called
+	ProcessedKeys   map[string]bool // Track processed deduplication keys for idempotency
+	WorkflowVersion int             `json:"workflow_version,omitempty"` // Track which version created this state
 }
 
 // RewardsWorkflow is the long-running entity workflow for a customer's rewards membership.
@@ -173,59 +173,7 @@ func RewardsWorkflow(ctx workflow.Context, state RewardsState) error {
 			var event PointEvent
 			c.Receive(ctx, &event)
 
-			// Check for duplicate using deduplication key
-			if event.DeduplicationKey != "" {
-				if state.ProcessedKeys[event.DeduplicationKey] {
-					logger.Info("Skipping duplicate point event",
-						"deduplicationKey", event.DeduplicationKey,
-						"activity", event.Activity,
-					)
-					return
-				}
-			}
-
-			cancelTimer() // reset inactivity timer on any activity
-
-			oldTier := state.Tier
-			state.Points += event.Points
-			state.EventCount++
-			newTier := computeTier(state.Points)
-
-			// Update search attributes when tier changes or after every point addition
-			err := workflow.UpsertTypedSearchAttributes(ctx,
-				tierKey.ValueSet(newTier),
-				pointsKey.ValueSet(int64(state.Points)),
-			)
-			if err != nil {
-				logger.Warn("Failed to upsert search attributes", "error", err)
-				// Don't fail the workflow on search attribute failure
-			}
-
-			state.Tier = newTier
-
-			// Mark as processed
-			if event.DeduplicationKey != "" {
-				state.ProcessedKeys[event.DeduplicationKey] = true
-			}
-
-			logger.Info("Points added",
-				"customerID", state.CustomerID,
-				"workflowID", info.WorkflowExecution.ID,
-				"activity", event.Activity,
-				"points", event.Points,
-				"total", state.Points,
-				"tier", state.Tier,
-				"deduplicationKey", event.DeduplicationKey,
-			)
-
-			// If tier changed, send notification
-			if oldTier != state.Tier {
-				err := workflow.ExecuteActivity(ctx, "NotifyTierChange", state.CustomerID, oldTier, state.Tier).Get(ctx, nil)
-				if err != nil {
-					logger.Warn("Failed to notify tier change", "error", err)
-					// Don't fail the workflow on notification failure
-				}
-			}
+			applyPointEvent(ctx, &state, event, info.WorkflowExecution.ID)
 
 			// Re-arm the inactivity timer
 			timerCtx, cancelTimer = workflow.WithCancel(ctx)
@@ -289,25 +237,35 @@ func RewardsWorkflow(ctx workflow.Context, state RewardsState) error {
 
 		selector.Select(ctx)
 
-		if state.Done {
-			logger.Info("RewardsWorkflow completed",
-				"customerID", state.CustomerID,
-				"workflowID", info.WorkflowExecution.ID,
-			)
-			return nil
-		}
+		if state.EventCount > 0 && state.EventCount%MaxHistoryEvents == 0 && unenrollCh.Len() == 0 {
+			// Drain buffered add-points signals before continuing as new.
+			// Temporal drops buffered signals if ContinueAsNew is called while
+			// signals are pending in the channel.
+			for {
+				var buffered PointEvent
+				if !pointsCh.ReceiveAsync(&buffered) {
+					break
+				}
+				applyPointEvent(ctx, &state, buffered, info.WorkflowExecution.ID)
+			}
 
-		// Continue-as-new to keep event history bounded
-		if state.EventCount > 0 && state.EventCount%MaxHistoryEvents == 0 {
 			logger.Info("Continuing as new to bound history",
 				"customerID", state.CustomerID,
 				"workflowID", info.WorkflowExecution.ID,
 				"eventCount", state.EventCount,
 				"workflowVersion", state.WorkflowVersion,
 			)
-			// Upgrade to current version on continue-as-new
+
 			state.WorkflowVersion = WorkflowVersion_Baseline
 			return workflow.NewContinueAsNewError(ctx, RewardsWorkflow, state)
+		}
+
+		if state.Done {
+			logger.Info("RewardsWorkflow completed",
+				"customerID", state.CustomerID,
+				"workflowID", info.WorkflowExecution.ID,
+			)
+			return nil
 		}
 	}
 }
@@ -321,6 +279,68 @@ func computeTier(points int) string {
 		return TierGold
 	default:
 		return TierBasic
+	}
+}
+
+func applyPointEvent(
+	ctx workflow.Context,
+	state *RewardsState,
+	event PointEvent,
+	workflowID string,
+) {
+
+	logger := workflow.GetLogger(ctx)
+
+	// Check for duplicate using deduplication key
+	if event.DeduplicationKey != "" {
+		if state.ProcessedKeys[event.DeduplicationKey] {
+			logger.Info("Skipping duplicate point event",
+				"deduplicationKey", event.DeduplicationKey,
+				"activity", event.Activity,
+			)
+			return
+		}
+	}
+
+	oldTier := state.Tier
+	state.Points += event.Points
+	state.EventCount++
+	newTier := computeTier(state.Points)
+
+	// Update search attributes when tier changes or after every point addition
+	err := workflow.UpsertTypedSearchAttributes(ctx,
+		tierKey.ValueSet(newTier),
+		pointsKey.ValueSet(int64(state.Points)),
+	)
+	if err != nil {
+		logger.Warn("Failed to upsert search attributes", "error", err)
+		// Don't fail the workflow on search attribute failure
+	}
+
+	state.Tier = newTier
+
+	// Mark as processed
+	if event.DeduplicationKey != "" {
+		state.ProcessedKeys[event.DeduplicationKey] = true
+	}
+
+	logger.Info("Points added",
+		"customerID", state.CustomerID,
+		"workflowID", workflowID,
+		"activity", event.Activity,
+		"points", event.Points,
+		"total", state.Points,
+		"tier", state.Tier,
+		"deduplicationKey", event.DeduplicationKey,
+	)
+
+	// If tier changed, send notification
+	if oldTier != state.Tier {
+		err := workflow.ExecuteActivity(ctx, "NotifyTierChange", state.CustomerID, oldTier, state.Tier).Get(ctx, nil)
+		if err != nil {
+			logger.Warn("Failed to notify tier change", "error", err)
+			// Don't fail the workflow on notification failure
+		}
 	}
 }
 
