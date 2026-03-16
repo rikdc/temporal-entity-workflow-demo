@@ -45,9 +45,11 @@ const (
 
 // PointEvent represents an incoming points signal
 type PointEvent struct {
-	DeduplicationKey string `json:"deduplication_key,omitempty"` // Optional idempotency key
-	Activity         string `json:"activity"`
-	Points           int    `json:"points"`
+	DeduplicationKey string    `json:"deduplication_key,omitempty"` // Optional idempotency key
+	Activity         string    `json:"activity"`
+	Points           int       `json:"points"`
+	SourceID         string    `json:"source_id,omitempty"`  // External reference (e.g. order ID, transaction ID)
+	OccurredAt       time.Time `json:"occurred_at,omitempty"` // When the event occurred in the source system
 }
 
 // CustomerStatus is returned by the query handler
