@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"time"
 	"os"
 	"strconv"
+	"time"
 
 	"go.temporal.io/sdk/client"
 
@@ -93,8 +93,8 @@ func enrollCustomer(c client.Client) {
 		Points:        0,
 		Tier:          workflow.TierBasic,
 		EventCount:    0,
-		Enrolled:      false,                   // Will trigger enrollment activity
-		ProcessedKeys: make(map[string]bool),   // Initialize deduplication map
+		Enrolled:      false,                 // Will trigger enrollment activity
+		ProcessedKeys: make(map[string]bool), // Initialize deduplication map
 	}
 
 	opts := client.StartWorkflowOptions{
@@ -135,6 +135,7 @@ func addPoints(c client.Client) {
 		DeduplicationKey: dedupKey,
 		Activity:         activityName,
 		Points:           pts,
+		SourceID:         "cli",
 	}
 
 	err = c.SignalWorkflow(ctx, workflowID(customerID), "", workflow.SignalAddPoints, event)
@@ -148,7 +149,6 @@ func addPoints(c client.Client) {
 		fmt.Printf("✓ Added %d points (%s) to customer %s\n", pts, activityName, customerID)
 	}
 }
-
 
 func unenrollCustomer(c client.Client) {
 	if len(os.Args) < 3 {
