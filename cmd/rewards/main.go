@@ -88,14 +88,7 @@ func enrollCustomer(c client.Client) {
 	customerID := os.Args[2]
 	ctx := context.Background()
 
-	initialState := workflow.RewardsState{
-		CustomerID:    customerID,
-		Points:        0,
-		Tier:          workflow.TierBasic,
-		EventCount:    0,
-		Enrolled:      false,                 // Will trigger enrollment activity
-		ProcessedKeys: make(map[string]bool), // Initialize deduplication map
-	}
+	initialState := workflow.NewRewardsState(customerID, workflow.TierBasic)
 
 	opts := client.StartWorkflowOptions{
 		ID:        workflowID(customerID),
