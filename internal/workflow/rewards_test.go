@@ -140,8 +140,8 @@ func TestTierDemotion(t *testing.T) {
 // TestPointEventDeduplication verifies deduplication key behavior
 func TestPointEventDeduplication(t *testing.T) {
 	tests := []struct {
-		name     string
-		event    PointEvent
+		name        string
+		event       PointEvent
 		hasDedupKey bool
 	}{
 		{
@@ -182,7 +182,7 @@ func TestRewardsStateInitialization(t *testing.T) {
 		Tier:            TierBasic,
 		EventCount:      0,
 		Enrolled:        false,
-		ProcessedKeys:   make(map[string]bool),
+		ProcessedKeys:   newIdempotencyStore(),
 		WorkflowVersion: WorkflowVersion_Baseline,
 	}
 
@@ -201,7 +201,7 @@ func TestRewardsStateInitialization(t *testing.T) {
 	if state.Enrolled {
 		t.Errorf("Enrolled = %v, want false", state.Enrolled)
 	}
-	if state.ProcessedKeys == nil {
+	if state.ProcessedKeys.Keys == nil {
 		t.Error("ProcessedKeys map is nil, want initialized map")
 	}
 	if state.WorkflowVersion != WorkflowVersion_Baseline {

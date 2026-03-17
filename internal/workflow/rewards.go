@@ -19,6 +19,10 @@ const (
 	// Continue-as-new after this many signal events to keep history bounded
 	MaxHistoryEvents = 200
 
+	// Number of days event idempotency is guaranteed. This number is arbitary and should be
+	// managed by real-world expectations.
+	IdempotencyGuaranteeTime = 3
+
 	// Points expire if no activity within this duration
 	InactivityTimeout = 365 * 24 * time.Hour
 )
@@ -48,7 +52,7 @@ type PointEvent struct {
 	DeduplicationKey string    `json:"deduplication_key,omitempty"` // Optional idempotency key
 	Activity         string    `json:"activity"`
 	Points           int       `json:"points"`
-	SourceID         string    `json:"source_id,omitempty"`  // External reference (e.g. order ID, transaction ID)
+	SourceID         string    `json:"source_id,omitempty"`   // External reference (e.g. order ID, transaction ID)
 	OccurredAt       time.Time `json:"occurred_at,omitempty"` // When the event occurred in the source system
 }
 
@@ -60,6 +64,56 @@ type CustomerStatus struct {
 	EventCount int    `json:"event_count"`
 }
 
+// idempotencyRecord is an internal struct to better detect and persist processedKeys
+type idempotencyRecord struct {
+	processedAt time.Time `json:"processed_at"`
+}
+
+func newIdempotencyStore() idempotencyStore {
+	return idempotencyStore{
+		Keys: make(map[string]idempotencyRecord),
+	}
+}
+
+// idempotencyStore maintains a sliding window of processed keys
+type idempotencyStore struct {
+	Keys    map[string]idempotencyRecord `json:"keys"`
+	Ordered []string                     `json:"ordered"` // maintain the order for serialzation,
+}
+
+func (s *idempotencyStore) Exists(key string) bool {
+	_, exists := s.Keys[key]
+	return exists
+}
+
+func (s *idempotencyStore) Push(key string, when time.Time) {
+	if _, exists := s.Keys[key]; !exists {
+		s.Ordered = append(s.Ordered, key)
+	}
+	s.Keys[key] = idempotencyRecord{processedAt: when}
+}
+
+// Evict removes keys older than ageDays from the store.
+func (s *idempotencyStore) Evict(ageDays int, now time.Time) {
+	cutoff := now.AddDate(0, 0, -ageDays)
+
+	i := 0
+	for i < len(s.Ordered) {
+		record := s.Keys[s.Ordered[i]]
+		if record.processedAt.Before(cutoff) {
+			delete(s.Keys, s.Ordered[i])
+			i++
+		} else {
+			break
+		}
+	}
+
+	// trim the slice (use copy to avoid a memory leak)
+	trimmed := make([]string, len(s.Ordered)-i)
+	copy(trimmed, s.Ordered[i:])
+	s.Ordered = trimmed
+}
+
 // RewardsState holds all mutable workflow state
 type RewardsState struct {
 	CustomerID      string
@@ -67,10 +121,21 @@ type RewardsState struct {
 	Tier            string
 	EventCount      int
 	Done            bool
-	Enrolled        bool            // Track if enrollment activity has been called
-	ProcessedKeys   map[string]bool // Track processed deduplication keys for idempotency
-	WorkflowVersion int             `json:"workflow_version,omitempty"` // Track which version created this state
-	LastActivityAt  time.Time       `json:"last_activity_at,omitempty"`
+	Enrolled        bool             // Track if enrollment activity has been called
+	ProcessedKeys   idempotencyStore // Track processed deduplication keys for idempotency
+	WorkflowVersion int              `json:"workflow_version,omitempty"` // Track which version created this state
+	LastActivityAt  time.Time        `json:"last_activity_at,omitempty"`
+}
+
+func NewRewardsState(customerId string, tier string) RewardsState {
+	return RewardsState{
+		CustomerID:    customerId,
+		Points:        0,
+		Tier:          tier,
+		EventCount:    0,
+		Enrolled:      false, // Will trigger enrollment activity
+		ProcessedKeys: newIdempotencyStore(),
+	}
 }
 
 // RewardsWorkflow is the long-running entity workflow for a customer's rewards membership.
@@ -103,11 +168,6 @@ func RewardsWorkflow(ctx workflow.Context, state RewardsState) error {
 	// Initialize workflow version if not set
 	if state.WorkflowVersion == 0 {
 		state.WorkflowVersion = WorkflowVersion_Baseline
-	}
-
-	// Initialize ProcessedKeys map if nil (for backwards compatibility with continue-as-new)
-	if state.ProcessedKeys == nil {
-		state.ProcessedKeys = make(map[string]bool)
 	}
 
 	// Activity options with retry policy
@@ -314,7 +374,7 @@ func applyPointEvent(
 
 	// Check for duplicate using deduplication key
 	if event.DeduplicationKey != "" {
-		if state.ProcessedKeys[event.DeduplicationKey] {
+		if state.ProcessedKeys.Exists(event.DeduplicationKey) {
 			logger.Info("Skipping duplicate point event",
 				"deduplicationKey", event.DeduplicationKey,
 				"activity", event.Activity,
@@ -342,7 +402,9 @@ func applyPointEvent(
 
 	// Mark as processed
 	if event.DeduplicationKey != "" {
-		state.ProcessedKeys[event.DeduplicationKey] = true
+		now := workflow.Now(ctx)
+		state.ProcessedKeys.Push(event.DeduplicationKey, now)
+		state.ProcessedKeys.Evict(IdempotencyGuaranteeTime, now)
 	}
 
 	logger.Info("Points added",
