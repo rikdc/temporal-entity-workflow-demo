@@ -69,3 +69,70 @@ func createInactivityTimer(ctx workflow.Context, timerCtx workflow.Context, stat
 **`LastActivityAt` updated on every re-arm**
 
 Set to `workflow.Now(ctx)` before calling `createInactivityTimer` at each re-arm site, so the computed remaining duration is always accurate. `workflow.Now` is used rather than `time.Now` to ensure deterministic replay.
+
+---
+
+## Point event audit fields
+
+**File:** `internal/workflow/rewards.go`
+
+### Problem
+
+`PointEvent` only carried `Activity` and `Points`. A signal could be correlated to a workflow history entry but not to the originating transaction in the source system. Customer support could not answer "did my Amazon order #12345 earn points?" without consulting external records.
+
+### Changes
+
+Two optional fields added to `PointEvent`:
+
+```go
+SourceID   string    `json:"source_id,omitempty"`   // External reference (e.g. order ID, transaction ID)
+OccurredAt time.Time `json:"occurred_at,omitempty"` // When the event occurred in the source system
+```
+
+Both are `omitempty` so existing callers are unaffected.
+
+---
+
+## Sliding window idempotency store
+
+**File:** `internal/workflow/rewards.go`
+
+### Problem
+
+The original deduplication implementation stored processed keys in a `map[string]bool` that grew unboundedly. Every key ever received was retained in `RewardsState` for the lifetime of the workflow — potentially years. This also had a serialisation bug: the map was checked with `if state.ProcessedKeys == nil` which would never be true after the type change, and the unexported fields caused silent data loss through JSON round-trips.
+
+### Changes
+
+**Replaced `map[string]bool` with `idempotencyStore`**
+
+A purpose-built struct that maintains both a map for O(1) lookup and an insertion-ordered slice for efficient age-based eviction:
+
+```go
+type idempotencyStore struct {
+    Keys    map[string]idempotencyRecord `json:"keys"`
+    Ordered []string                     `json:"ordered"`
+}
+
+type idempotencyRecord struct {
+    ProcessedAt time.Time `json:"processed_at"`
+}
+```
+
+All fields are exported with JSON tags so the store survives serialisation through `ContinueAsNew`.
+
+**`Evict` method**
+
+Walks `Ordered` from the front (oldest first) and removes entries older than `ageDays`. Stops at the first unexpired key since insertion order guarantees everything after it is newer. Uses a slice copy on trim to avoid a memory leak from the backing array retaining evicted strings.
+
+**Called on every `applyPointEvent`**
+
+```go
+state.ProcessedKeys.Push(event.DeduplicationKey, workflow.Now(ctx))
+state.ProcessedKeys.Evict(IdempotencyGuaranteeTime, workflow.Now(ctx))
+```
+
+`IdempotencyGuaranteeTime = 3` days. Keys older than this window are safe to evict — retries from source systems are not expected after 3 days.
+
+**Unit tests**
+
+`idempotency_test.go` covers: exists, push duplicate, evict expired, evict unexpired, evict mixed, evict empty store, evict all expired.
